@@ -1,26 +1,31 @@
 #include <Arduino.h>
 
-#include "ledController.h"
+#include "led_controller.h"
+#include "secrets.h"
+#include "wifi_manager.h"
 
 #define PIN_WS2812B 32
 #define NUM_PIXELS 44
 
 LedController strip(NUM_PIXELS, PIN_WS2812B);
+WiFiManager wifi(WIFI_SSID, WIFI_PASSWORD);
 
 void setup() {
   Serial.begin(9600);
   strip.begin(3);  // brightness
+  wifi.begin();
 }
 
 void loop() {
+  wifi.update();
+
   strip.clear();
 
-  strip.addRangePct(0.0f, 0.0833f, strip.Color(255, 0, 0));
-  strip.addRangePct(0.0833f, 0.1666f, strip.Color(0, 255, 0));
-  strip.addRangePct(0.1666f, 0.25f, strip.Color(255, 0, 0));
-  strip.addRangePct(0.25f, 0.5f, strip.Color(0, 0, 255));
-  strip.addRangePct(0.5f, 0.75f, strip.Color(100, 0, 0));
-  strip.addRangePct(0.75f, 1.0f, strip.Color(255, 255, 255));
+  if (wifi.isConnected()) {
+    strip.addRangePct(0.0f, 0.5f, strip.Color(0, 255, 0));  // green
+  } else {
+    strip.addRangePct(0.5f, 1.0f, strip.Color(255, 0, 0));  // red
+  }
 
   strip.show(1000, 0.0f);
 

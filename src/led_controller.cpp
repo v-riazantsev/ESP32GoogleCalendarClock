@@ -1,4 +1,4 @@
-#include "ledController.h"
+#include "led_controller.h"
 
 LedController::LedController(uint16_t numPixels, uint8_t pin, neoPixelType type)
     : _strip(numPixels, pin, type), MAX_LEDS(numPixels) {
