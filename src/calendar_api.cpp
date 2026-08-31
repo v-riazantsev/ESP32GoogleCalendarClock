@@ -5,7 +5,13 @@
 
 #include "secrets.h"
 
-std::vector<Event> CalendarApi::fetchEvents() {
+bool CalendarApi::fetchEvents(std::vector<Event>& events) {
+  // Check if Wi-Fi is connected before making the HTTP request.
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Wi-Fi not connected. Cannot fetch events.");
+    return false;
+  }
+
   HTTPClient http;
 
   String url = String(GOOGLE_APP_URL) + String(GOOGLE_APP_TOKEN);
@@ -29,7 +35,7 @@ std::vector<Event> CalendarApi::fetchEvents() {
     Serial.println(http.errorToString(httpCode));
 
     http.end();
-    return {};
+    return false;
   }
 
   String response = http.getString();
@@ -39,7 +45,8 @@ std::vector<Event> CalendarApi::fetchEvents() {
 
   http.end();
 
-  std::vector<Event> events;
+  // Clear the events vector.
+  events.clear();
 
   // Parse the JSON response.
   JsonDocument document;
@@ -49,7 +56,7 @@ std::vector<Event> CalendarApi::fetchEvents() {
   if (error) {
     Serial.print("JSON parsing failed: ");
     Serial.println(error.f_str());
-    return {};
+    return false;
   }
 
   // Convert the JSON array to a vector of Event objects.
@@ -68,6 +75,5 @@ std::vector<Event> CalendarApi::fetchEvents() {
 
     events.push_back(event);
   }
-
-  return events;
+  return true;
 }

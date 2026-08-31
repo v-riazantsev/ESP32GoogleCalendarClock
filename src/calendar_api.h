@@ -6,5 +6,5 @@
 
 class CalendarApi {
  public:
-  std::vector<Event> fetchEvents();
+  bool fetchEvents(std::vector<Event>& events);
 };
