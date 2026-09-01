@@ -1,14 +1,64 @@
 #include "led_controller.h"
 
-LedController::LedController(uint16_t numPixels, uint8_t pin, neoPixelType type)
-    : _strip(numPixels, pin, type), MAX_LEDS(numPixels) {
+LedController::LedController(uint16_t numPixels, uint8_t pin,
+                             EventManager& eventManager)
+    : _strip(numPixels, pin), _eventManager(eventManager), MAX_LEDS(numPixels) {
   _buf = new uint32_t[MAX_LEDS * 24];
+  _strip.begin();
+  clear();
 }
 
-void LedController::begin(uint8_t brightness) {
-  _strip.begin();
+void LedController::switchMode(LedMode mode) {
+  if (_mode == mode) return;  // No change needed
+  _mode = mode;
+
+  if (mode == LedMode::None) {
+    _isRunning = false;  // Signal the task to stop
+    return;
+  }
+
+  _isRunning = true;
+  xTaskCreatePinnedToCore(
+      [](void* param) {
+        LedController* controller = static_cast<LedController*>(param);
+        controller->update();
+      },
+      "LedUpdateTask",  // Task name
+      8192,             // Stack size
+      this,             // Pass the object instance
+      1,                // Task priority
+      &_taskHandle,     // Task handle
+      0                 // Core ID
+  );
+}
+
+void LedController::update() {
+  while (_isRunning) {
+    clear();
+    switch (_mode) {
+      case LedMode::Events: {
+        fillEvents(_eventManager.getEvents(),  // Current events
+                   1788262563 - 3600 * 1.5f,   // Current timestamp
+                   3600 * 3);  // Fade distance in seconds (3 hours)
+      } break;
+    }
+    refresh();
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+
+  showBlank();
+  _taskHandle = nullptr;
+  vTaskDelete(nullptr);
+}
+
+void LedController::refresh() {
+  for (uint16_t i = 0; i < MAX_LEDS; i++) _strip.setPixelColor(i, _buf[i]);
+  _strip.show();
+}
+
+void LedController::setBrightness(uint8_t brightness) {
   _strip.setBrightness(brightness);
-  clear();
 }
 
 void LedController::clear() {
@@ -16,6 +66,12 @@ void LedController::clear() {
 }
 
 void LedController::addRangePct(float startPct, float endPct, uint32_t color) {
+  Serial.print("Adding range: ");
+  Serial.print(startPct);
+  Serial.print(" to ");
+  Serial.print(endPct);
+  Serial.print(" with color: ");
+  Serial.println(color, HEX);
   // Keep the requested range inside the valid 0.0 to 1.0 range.
   startPct = constrain(startPct, 0.0f, 1.0f);
   endPct = constrain(endPct, 0.0f, 1.0f);
@@ -73,8 +129,27 @@ void LedController::addRangePct(float startPct, float endPct, uint32_t color) {
   }
 }
 
-void LedController::show(uint currentTimestamp, float fadeDistance) {
-  int offset = currentTimestamp;
-  for (uint16_t i = 0; i < MAX_LEDS; i++) _strip.setPixelColor(i, _buf[i]);
-  _strip.show();
+void LedController::fillEvents(const std::vector<Event>& events,
+                               uint32_t currentTimestamp,
+                               uint32_t fadeDistance) {
+  clear();
+  Serial.print("Filling ");
+  Serial.print(events.size());
+  Serial.print(" events at timestamp: ");
+  Serial.println(currentTimestamp);
+  for (const Event& event : events) {
+    if (event.endTimestamp < currentTimestamp - fadeDistance)
+      continue;  // Skip past events
+    if (event.startTimestamp > currentTimestamp + 3600 * 12 - fadeDistance)
+      continue;  // Skip events that are too far in the future
+
+    float startPct =
+        (float)((int32_t)(event.startTimestamp - currentTimestamp)) /
+        (3600.0f * 12);
+    float endPct = (float)((int32_t)(event.endTimestamp - currentTimestamp)) /
+                   (3600.0f * 12);
+
+    addRangePct(startPct, endPct, event.color);
+  }
+  refresh();
 }

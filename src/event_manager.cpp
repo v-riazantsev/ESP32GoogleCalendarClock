@@ -64,5 +64,5 @@ void EventManager::fetchLoop() {
   }
 
   _taskHandle = nullptr;
-  vTaskDelete(NULL);  // Delete current task context
+  vTaskDelete(nullptr);  // Delete current task context
 }

@@ -2,22 +2,37 @@
 #include <Adafruit_NeoPixel.h>
 #include <Arduino.h>
 
+#include <vector>
+
+#include "event.h"
+#include "event_manager.h"
+
+enum class LedMode { None, Events };
+
 class LedController {
  public:
   uint16_t MAX_LEDS;
-  LedController(uint16_t numPixels, uint8_t pin,
-                neoPixelType type = (NEO_GRB + NEO_KHZ800));
+  LedController(uint16_t numPixels, uint8_t pin, EventManager& eventManager);
 
-  void begin(uint8_t brightness);
-  void clear();  // clears framebuffer
-  void addRangePct(float startPct, float endPct, uint32_t color);  // 0..100 %
-  void show(uint currentTimestamp, float fadeDistance = 0.0f);
-
-  uint32_t Color(uint8_t r, uint8_t g, uint8_t b) const {
-    return _strip.Color(r, g, b);
-  }
+  void setBrightness(uint8_t brightness);
+  void switchMode(LedMode mode);
 
  private:
   Adafruit_NeoPixel _strip;
+  LedMode _mode = LedMode::None;
+  EventManager& _eventManager;
   uint32_t* _buf;
+  bool _isRunning;
+  TaskHandle_t _taskHandle;
+
+  void clear();    // clears framebuffer
+  void refresh();  // refreshes the strip with the framebuffer
+  void update();
+  void addRangePct(float startPct, float endPct, uint32_t color);  // 0..100 %
+  void fillEvents(const std::vector<Event>& events, uint32_t currentTimestamp,
+                  uint32_t fadeDistance);
+  void showBlank() {
+    clear();
+    refresh();
+  };
 };
