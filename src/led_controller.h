@@ -31,6 +31,11 @@ class LedController {
   void addRangePct(float startPct, float endPct, uint32_t color);  // 0..100 %
   void fillEvents(const std::vector<Event>& events, uint32_t currentTimestamp,
                   uint32_t fadeDistance);
+  float wrap(float val, float length) {
+    if (val == length) return length;
+    float result = std::fmod(val, length);
+    return (result < 0.0f) ? (result + length) : result;
+  }
   void showBlank() {
     clear();
     refresh();

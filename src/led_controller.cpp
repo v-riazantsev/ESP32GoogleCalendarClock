@@ -38,7 +38,7 @@ void LedController::update() {
     switch (_mode) {
       case LedMode::Events: {
         fillEvents(_eventManager.getEvents(),  // Current events
-                   1788262563 - 3600 * 1.5f,   // Current timestamp
+                   1788263686 - 3600 * 1.5f,   // Current timestamp
                    3600 * 3);  // Fade distance in seconds (3 hours)
       } break;
     }
@@ -73,11 +73,22 @@ void LedController::addRangePct(float startPct, float endPct, uint32_t color) {
   Serial.print(" with color: ");
   Serial.println(color, HEX);
   // Keep the requested range inside the valid 0.0 to 1.0 range.
-  startPct = constrain(startPct, 0.0f, 1.0f);
-  endPct = constrain(endPct, 0.0f, 1.0f);
-
+  Serial.print("Before wrap: startPct = ");
+  Serial.print(startPct);
+  Serial.print(", endPct = ");
+  Serial.println(endPct);
+  startPct = wrap(startPct, 1.0f);
+  endPct = wrap(endPct, 1.0f);
+  Serial.print("After wrap: startPct = ");
+  Serial.print(startPct);
+  Serial.print(", endPct = ");
+  Serial.println(endPct);
   // Nothing to paint if the range has no length.
-  if (endPct <= startPct) return;
+  if (endPct < startPct) {
+    addRangePct(startPct, 1.0f, color);
+    addRangePct(0.0f, endPct, color);
+    return;
+  }
 
   // Extract the red, green, and blue components from the color.
   uint8_t paintRed = (color >> 16) & 255;
