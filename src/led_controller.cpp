@@ -1,53 +1,62 @@
 #include "led_controller.h"
 
 LedController::LedController(uint16_t numPixels, uint8_t pin,
-                             EventManager& eventManager)
-    : _strip(numPixels, pin), _eventManager(eventManager), MAX_LEDS(numPixels) {
+                             EventManager& eventManager,
+                             TimeManager& timeManager)
+    : _strip(numPixels, pin),
+      _eventManager(eventManager),
+      _timeManager(timeManager),
+      MAX_LEDS(numPixels) {
   _buf = new uint32_t[MAX_LEDS * 24];
   _strip.begin();
   clear();
 }
 
+void LedController::startTask() {
+  if (_taskHandle != nullptr) return;
+
+  _isRunning = true;
+
+  xTaskCreatePinnedToCore(
+      [](void* param) {
+        auto* controller = static_cast<LedController*>(param);
+
+        controller->update();
+      },
+      "LedUpdateTask", 8192, this, 1, &_taskHandle, 0);
+}
+
 void LedController::switchMode(LedMode mode) {
-  if (_mode == mode) return;  // No change needed
+  if (_mode == mode) return;
+
   _mode = mode;
 
   if (mode == LedMode::None) {
-    _isRunning = false;  // Signal the task to stop
-    return;
+    clear();
+    refresh();
   }
-
-  _isRunning = true;
-  xTaskCreatePinnedToCore(
-      [](void* param) {
-        LedController* controller = static_cast<LedController*>(param);
-        controller->update();
-      },
-      "LedUpdateTask",  // Task name
-      8192,             // Stack size
-      this,             // Pass the object instance
-      1,                // Task priority
-      &_taskHandle,     // Task handle
-      0                 // Core ID
-  );
 }
 
 void LedController::update() {
   while (_isRunning) {
     clear();
+
     switch (_mode) {
-      case LedMode::Events: {
-        fillEvents(_eventManager.getEvents(),  // Current events
-                   1788263686 - 3600 * 1.5f,   // Current timestamp
-                   3600 * 3);  // Fade distance in seconds (3 hours)
-      } break;
+      case LedMode::Events:
+        fillEvents(_eventManager.getEvents(), _timeManager.now(), 3600 * 3);
+        break;
+
+      case LedMode::None:
+        break;
     }
+
     refresh();
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(32));
   }
 
   showBlank();
+
   _taskHandle = nullptr;
   vTaskDelete(nullptr);
 }
@@ -66,23 +75,23 @@ void LedController::clear() {
 }
 
 void LedController::addRangePct(float startPct, float endPct, uint32_t color) {
-  Serial.print("Adding range: ");
-  Serial.print(startPct);
-  Serial.print(" to ");
-  Serial.print(endPct);
-  Serial.print(" with color: ");
-  Serial.println(color, HEX);
+  // Serial.print("Adding range: ");
+  // Serial.print(startPct);
+  // Serial.print(" to ");
+  // Serial.print(endPct);
+  // Serial.print(" with color: ");
+  // Serial.println(color, HEX);
   // Keep the requested range inside the valid 0.0 to 1.0 range.
-  Serial.print("Before wrap: startPct = ");
-  Serial.print(startPct);
-  Serial.print(", endPct = ");
-  Serial.println(endPct);
+  // Serial.print("Before wrap: startPct = ");
+  // Serial.print(startPct);
+  // Serial.print(", endPct = ");
+  // Serial.println(endPct);
   startPct = wrap(startPct, 1.0f);
   endPct = wrap(endPct, 1.0f);
-  Serial.print("After wrap: startPct = ");
-  Serial.print(startPct);
-  Serial.print(", endPct = ");
-  Serial.println(endPct);
+  // Serial.print("After wrap: startPct = ");
+  // Serial.print(startPct);
+  // Serial.print(", endPct = ");
+  // Serial.println(endPct);
   // Nothing to paint if the range has no length.
   if (endPct < startPct) {
     addRangePct(startPct, 1.0f, color);
@@ -141,26 +150,47 @@ void LedController::addRangePct(float startPct, float endPct, uint32_t color) {
 }
 
 void LedController::fillEvents(const std::vector<Event>& events,
-                               uint32_t currentTimestamp,
-                               uint32_t fadeDistance) {
-  clear();
-  Serial.print("Filling ");
-  Serial.print(events.size());
-  Serial.print(" events at timestamp: ");
-  Serial.println(currentTimestamp);
-  for (const Event& event : events) {
-    if (event.endTimestamp < currentTimestamp - fadeDistance)
-      continue;  // Skip past events
-    if (event.startTimestamp > currentTimestamp + 3600 * 12 - fadeDistance)
-      continue;  // Skip events that are too far in the future
+                               time_t currentTimestamp, uint32_t fadeDistance) {
+  // Serial.print("Filling ");
+  // Serial.print(events.size());
+  // Serial.print(" events at timestamp: ");
+  // Serial.println(currentTimestamp);
 
-    float startPct =
-        (float)((int32_t)(event.startTimestamp - currentTimestamp)) /
-        (3600.0f * 12);
-    float endPct = (float)((int32_t)(event.endTimestamp - currentTimestamp)) /
-                   (3600.0f * 12);
+  for (const Event& event : events) {
+    // Still use UTC timestamps for determining
+    // whether the event is relevant.
+    int32_t startOffset = event.startTimestamp - currentTimestamp;
+
+    int32_t endOffset = event.endTimestamp - currentTimestamp;
+
+    if (endOffset < -(int32_t)fadeDistance &&
+        startOffset < -(int32_t)fadeDistance)
+      continue;
+
+    if (startOffset > 12 * 3600 - (int32_t)fadeDistance) continue;
+
+    // Clamp offset values to the display range.
+    startOffset = constrain(startOffset, -(int32_t)fadeDistance,
+                            12 * 3600 - (int32_t)fadeDistance);
+    endOffset = constrain(endOffset, -(int32_t)fadeDistance,
+                          12 * 3600 - (int32_t)fadeDistance);
+
+    // Convert event timestamps to LOCAL clock positions.
+    float startPct = _timeManager.clock12hPct(currentTimestamp + startOffset);
+
+    float endPct = _timeManager.clock12hPct(currentTimestamp + endOffset);
+
+    // Serial.print("Event: ");
+    // Serial.print(event.summary.c_str());
+    // Serial.print(", startOffset: ");
+    // Serial.print(startOffset);
+    // Serial.print(", endOffset: ");
+    // Serial.print(endOffset);
+    // Serial.print(", startPct: ");
+    // Serial.print(startPct);
+    // Serial.print(", endPct: ");
+    // Serial.println(endPct);
 
     addRangePct(startPct, endPct, event.color);
   }
-  refresh();
 }

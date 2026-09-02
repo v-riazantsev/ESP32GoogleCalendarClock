@@ -7,8 +7,8 @@
 struct Event {
   std::string id;
 
-  uint64_t startTimestamp;
-  uint64_t endTimestamp;
+  time_t startTimestamp;
+  time_t endTimestamp;
 
   std::string summary;
   std::string description;
