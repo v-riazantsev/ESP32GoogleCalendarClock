@@ -9,6 +9,20 @@
 #include "event_manager.h"
 #include "time_manager.h"
 
+struct RGB {
+  uint8_t r;
+  uint8_t g;
+  uint8_t b;
+  bool isBlack() const { return r == 0 && g == 0 && b == 0; }
+  RGB() : r(0), g(0), b(0) {}
+  RGB(uint8_t red, uint8_t green, uint8_t blue) : r(red), g(green), b(blue) {}
+  RGB(uint32_t color) {
+    r = (color >> 16) & 0xFF;
+    g = (color >> 8) & 0xFF;
+    b = color & 0xFF;
+  }
+};
+
 enum class LedMode { None, Events };
 
 class LedController {
@@ -29,7 +43,7 @@ class LedController {
   LedMode _mode = LedMode::None;
   EventManager& _eventManager;
   TimeManager& _timeManager;
-  uint32_t* _buf;
+  RGB* _buf;
   bool _isRunning;
   TaskHandle_t _taskHandle;
   uint32_t _lastRenderMs;
@@ -40,10 +54,25 @@ class LedController {
   void clear();    // clears framebuffer
   void refresh();  // refreshes the strip with the framebuffer
   void update();
-  void addRangePct(float startPct, float endPct, uint32_t color);  // 0..100 %
+  void addRangePct(float startPct, float endPct, RGB paintColor);  // 0..100 %
+  void fadeRangePct(float startPct, float endPct, RGB fadeColor,
+                    float startValue = 0.0f,
+                    float endValue = 1.0f);  // 0..100 %
   void fillEvents(const std::vector<Event>& events, time_t currentTimestamp,
                   uint32_t fadeDistance);
-  float wrap(float val, float length);
+  template <typename Func>
+  void forEachLedInRange(float startPct, float endPct,
+                         Func&& callback);  // 0..100 %
+  float lerpFast(float a, float b, float t) { return a + t * (b - a); }
+  float inverseLerpClamped(float a, float b, float value) {
+    if (a == b) return 0.0f;
+    return constrain((value - a) / (b - a), 0.0f, 1.0f);
+  }
+  RGB lerpColor(RGB a, RGB b, float t) {
+    return {static_cast<uint8_t>(lerpFast(a.r, b.r, t)),
+            static_cast<uint8_t>(lerpFast(a.g, b.g, t)),
+            static_cast<uint8_t>(lerpFast(a.b, b.b, t))};
+  }
   void showBlank() {
     clear();
     refresh();

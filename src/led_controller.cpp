@@ -1,5 +1,7 @@
 #include "led_controller.h"
 
+#include <cmath>
+
 LedController::LedController(uint16_t numPixels, uint8_t pin,
                              EventManager& eventManager,
                              TimeManager& timeManager)
@@ -7,7 +9,7 @@ LedController::LedController(uint16_t numPixels, uint8_t pin,
       _eventManager(eventManager),
       _timeManager(timeManager),
       MAX_LEDS(numPixels) {
-  _buf = new uint32_t[MAX_LEDS];
+  _buf = new RGB[MAX_LEDS];
   _strip.begin();
   clear();
 }
@@ -24,12 +26,6 @@ void LedController::startTask() {
         controller->update();
       },
       "LedUpdateTask", 8192, this, 1, &_taskHandle, 1);
-}
-
-float LedController::wrap(float val, float length) {
-  if (val == length) return length;
-  float result = std::fmod(val, length);
-  return (result < 0.0f) ? (result + length) : result;
 }
 
 void LedController::update() {
@@ -65,7 +61,7 @@ void LedController::update() {
 
 void LedController::refresh() {
   for (uint16_t i = 0; i < MAX_LEDS; i++) {
-    _strip.setPixelColor(i, _buf[i]);
+    _strip.setPixelColor(i, _buf[i].r, _buf[i].g, _buf[i].b);
   }
 
   _strip.show();
@@ -76,95 +72,67 @@ void LedController::setBrightness(uint8_t brightness) {
 }
 
 void LedController::clear() {
-  for (uint16_t i = 0; i < MAX_LEDS; i++) _buf[i] = 0;
+  for (uint16_t i = 0; i < MAX_LEDS; i++) _buf[i] = RGB();
 }
 
-void LedController::addRangePct(float startPct, float endPct, uint32_t color) {
-  // Serial.print("Adding range: ");
-  // Serial.print(startPct);
-  // Serial.print(" to ");
-  // Serial.print(endPct);
-  // Serial.print(" with color: ");
-  // Serial.println(color, HEX);
-  // Keep the requested range inside the valid 0.0 to 1.0 range.
-  // Serial.print("Before wrap: startPct = ");
-  // Serial.print(startPct);
-  // Serial.print(", endPct = ");
-  // Serial.println(endPct);
-  if (endPct == startPct) {
-    return;
+// Reusable Helper: Encapsulates strip geometry and anti-aliased range iteration
+template <typename Func>
+void LedController::forEachLedInRange(float startPct, float endPct, Func&& fn) {
+  if (endPct == startPct) return;
+
+  float startPos = startPct * MAX_LEDS;
+  float endPos = endPct * MAX_LEDS;
+
+  float rangeLength = (startPos < endPos) ? (endPos - startPos)
+                                          : (MAX_LEDS - startPos + endPos);
+
+  uint16_t startLed = static_cast<uint16_t>(startPos);
+  uint16_t endLed = static_cast<uint16_t>(std::ceil(endPos));
+
+  for (uint16_t i = startLed, j = 0; i != endLed;
+       i = (i + 1 >= MAX_LEDS) ? 0 : i + 1, j++) {
+    // Sub-pixel coverage calculation
+    float coveragePct = 1.0f;
+    if (i == startLed) coveragePct -= (startPos - startLed);
+    if (i == endLed - 1) coveragePct -= ((endLed - 1) + 1.0f - endPos);
+
+    coveragePct = std::max(0.0f, coveragePct);
+    float progress =
+        (rangeLength > 0.0f) ? static_cast<float>(j) / rangeLength : 0.0f;
+
+    // Delegate pixel logic to caller
+    fn(i, coveragePct, progress);
   }
-  startPct = wrap(startPct, 1.0f);
-  endPct = wrap(endPct, 1.0f);
-  // Serial.print("After wrap: startPct = ");
-  // Serial.print(startPct);
-  // Serial.print(", endPct = ");
-  // Serial.println(endPct);
-  // Nothing to paint if the range has no length.
-  if (endPct < startPct) {
-    addRangePct(startPct, 1.0f, color);
-    addRangePct(0.0f, endPct, color);
-    return;
-  }
-
-  // Extract the red, green, and blue components from the color.
-  uint8_t paintRed = (color >> 16) & 255;
-  uint8_t paintGreen = (color >> 8) & 255;
-  uint8_t paintBlue = color & 255;
-
-  // Calculate how much of the normalized strip is occupied by one LED.
-  float ledLength = 1.0f / (float)MAX_LEDS;
-
-  // Process every LED and find how much of it overlaps the requested range.
-  for (uint16_t ledIndex = 0; ledIndex < MAX_LEDS; ledIndex++) {
-    // Calculate the normalized start and end position of this LED.
-    float ledStart = ledIndex * ledLength;
-    float ledEnd = ledStart + ledLength;
-
-    // Find the overlapping
-    float overlapStart = (ledStart > startPct) ? ledStart : startPct;
-    float overlapEnd = (ledEnd < endPct) ? ledEnd : endPct;
-
-    // Calculate how much of this LED is covered by the requested range.
-    float overlapLength = overlapEnd - overlapStart;
-
-    // Skip this LED if the requested range does not touch it.
-    if (overlapLength <= 0) continue;
-
-    // Convert the overlap into a value between 0.0 and 1.0.
-    float coverage = overlapLength / ledLength;
-
-    // Read the LED's current RGB color.
-    uint32_t currentColor = _buf[ledIndex];
-
-    // Extract the current red, green, and blue components.
-    int r = (currentColor >> 16) & 255;
-    int g = (currentColor >> 8) & 255;
-    int b = currentColor & 255;
-
-    // Add the requested color based on how much of the LED is covered.
-    r += paintRed * coverage + 0.5f;
-    g += paintGreen * coverage + 0.5f;
-    b += paintBlue * coverage + 0.5f;
-
-    // Limit the RGB values to the valid 0 to 255 range.
-    if (r > 255) r = 255;
-    if (g > 255) g = 255;
-    if (b > 255) b = 255;
-
-    // Store the updated RGB color back into the LED buffer.
-    _buf[ledIndex] = ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
-    // Serial.print(_buf[ledIndex], HEX);
-  }
-  // Serial.println();
 }
 
+void LedController::addRangePct(float startPct, float endPct, RGB paintColor) {
+  forEachLedInRange(
+      startPct, endPct,
+      [this, paintColor](uint16_t i, float coveragePct, float) {
+        RGB currentColor = _buf[i];
+        float blendFactor = currentColor.isBlack() ? coveragePct : 0.5f;
+        _buf[i] = lerpColor(currentColor, paintColor, blendFactor);
+      });
+}
+
+void LedController::fadeRangePct(float startPct, float endPct, RGB fadeColor,
+                                 float startValue, float endValue) {
+  forEachLedInRange(
+      startPct, endPct,
+      [this, fadeColor, startValue, endValue](uint16_t i, float coveragePct,
+                                              float progress) {
+        RGB currentColor = _buf[i];
+        float fadeValue =
+            lerpFast(startValue, endValue, 1.0f - progress * progress);
+        _buf[i] = lerpColor(currentColor, fadeColor, fadeValue * coveragePct);
+      });
+}
 void LedController::fillEvents(const std::vector<Event>& events,
                                time_t currentTimestamp, uint32_t fadeDistance) {
-  // Serial.print("Filling ");
-  // Serial.print(events.size());
-  // Serial.print(" events at timestamp: ");
-  // Serial.println(currentTimestamp);
+  // The display range is from -fadeDistance + 1 LED to 12 hours in the future.
+  int32_t displayRangeOffsetStart =
+      -(int32_t)fadeDistance + (12 * 3600 / MAX_LEDS);
+  int32_t displayRangeOffsetEnd = 12 * 3600 - (int32_t)fadeDistance;
 
   for (const Event& event : events) {
     // Still use UTC timestamps for determining
@@ -180,27 +148,22 @@ void LedController::fillEvents(const std::vector<Event>& events,
     if (startOffset > 12 * 3600 - (int32_t)fadeDistance) continue;
 
     // Clamp offset values to the display range.
-    startOffset = constrain(startOffset, -(int32_t)fadeDistance,
-                            12 * 3600 - (int32_t)fadeDistance);
-    endOffset = constrain(endOffset, -(int32_t)fadeDistance,
-                          12 * 3600 - (int32_t)fadeDistance);
+    startOffset =
+        constrain(startOffset, displayRangeOffsetStart, displayRangeOffsetEnd);
+    endOffset =
+        constrain(endOffset, displayRangeOffsetStart, displayRangeOffsetEnd);
 
     // Convert event timestamps to LOCAL clock positions.
     float startPct = _timeManager.clock12hPct(currentTimestamp + startOffset);
 
     float endPct = _timeManager.clock12hPct(currentTimestamp + endOffset);
 
-    // Serial.print("Event: ");
-    // Serial.print(event.summary.c_str());
-    // Serial.print(", startOffset: ");
-    // Serial.print(startOffset);
-    // Serial.print(", endOffset: ");
-    // Serial.print(endOffset);
-    // Serial.print(", startPct: ");
-    // Serial.print(startPct);
-    // Serial.print(", endPct: ");
-    // Serial.println(endPct);
-
     addRangePct(startPct, endPct, event.color);
   }
+
+  float fadeStartPct =
+      _timeManager.clock12hPct(currentTimestamp - fadeDistance);
+  float fadeEndPct = _timeManager.clock12hPct(currentTimestamp);
+
+  fadeRangePct(fadeStartPct, fadeEndPct, 0x000000);
 }
