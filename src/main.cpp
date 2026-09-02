@@ -29,10 +29,7 @@ void setup() {
 }
 
 void loop() {
-  wifi.update();
-
-  String events = "Events: " + String(eventManager.getEvents().size());
-  Serial.println(events);
+  wifi.update();  // Keep Wi-Fi connection alive
 
   delay(5000);
 }

@@ -7,7 +7,7 @@ LedController::LedController(uint16_t numPixels, uint8_t pin,
       _eventManager(eventManager),
       _timeManager(timeManager),
       MAX_LEDS(numPixels) {
-  _buf = new uint32_t[MAX_LEDS * 24];
+  _buf = new uint32_t[MAX_LEDS];
   _strip.begin();
   clear();
 }
@@ -23,34 +23,36 @@ void LedController::startTask() {
 
         controller->update();
       },
-      "LedUpdateTask", 8192, this, 1, &_taskHandle, 0);
+      "LedUpdateTask", 8192, this, 1, &_taskHandle, 1);
 }
 
-void LedController::switchMode(LedMode mode) {
-  if (_mode == mode) return;
-
-  _mode = mode;
-
-  if (mode == LedMode::None) {
-    clear();
-    refresh();
-  }
+float LedController::wrap(float val, float length) {
+  if (val == length) return length;
+  float result = std::fmod(val, length);
+  return (result < 0.0f) ? (result + length) : result;
 }
 
 void LedController::update() {
   while (_isRunning) {
-    clear();
+    uint32_t now = millis();
+    uint32_t refreshInterval = refreshIntervals[_mode];
 
-    switch (_mode) {
-      case LedMode::Events:
-        fillEvents(_eventManager.getEvents(), _timeManager.now(), 3600 * 3);
-        break;
+    if (_lastRenderMs == 0 || now - _lastRenderMs >= refreshInterval) {
+      _lastRenderMs = now;
 
-      case LedMode::None:
-        break;
+      clear();
+
+      switch (_mode) {
+        case LedMode::Events:
+          fillEvents(_eventManager.getEvents(), _timeManager.now(), 3600 * 3);
+          break;
+
+        case LedMode::None:
+          break;
+      }
+
+      refresh();
     }
-
-    refresh();
 
     vTaskDelay(pdMS_TO_TICKS(32));
   }
@@ -62,7 +64,10 @@ void LedController::update() {
 }
 
 void LedController::refresh() {
-  for (uint16_t i = 0; i < MAX_LEDS; i++) _strip.setPixelColor(i, _buf[i]);
+  for (uint16_t i = 0; i < MAX_LEDS; i++) {
+    _strip.setPixelColor(i, _buf[i]);
+  }
+
   _strip.show();
 }
 
@@ -86,6 +91,9 @@ void LedController::addRangePct(float startPct, float endPct, uint32_t color) {
   // Serial.print(startPct);
   // Serial.print(", endPct = ");
   // Serial.println(endPct);
+  if (endPct == startPct) {
+    return;
+  }
   startPct = wrap(startPct, 1.0f);
   endPct = wrap(endPct, 1.0f);
   // Serial.print("After wrap: startPct = ");
@@ -146,7 +154,9 @@ void LedController::addRangePct(float startPct, float endPct, uint32_t color) {
 
     // Store the updated RGB color back into the LED buffer.
     _buf[ledIndex] = ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+    // Serial.print(_buf[ledIndex], HEX);
   }
+  // Serial.println();
 }
 
 void LedController::fillEvents(const std::vector<Event>& events,
