@@ -2,15 +2,29 @@
 
 #include <cmath>
 
-LedController::LedController(uint16_t numPixels, uint8_t pin,
-                             EventManager& eventManager,
+#include "config.h"
+
+LedController::LedController(EventManager& eventManager,
                              TimeManager& timeManager)
-    : _strip(numPixels, pin),
-      _eventManager(eventManager),
+    : _eventManager(eventManager),
       _timeManager(timeManager),
-      MAX_LEDS(numPixels) {
-  _buf = new RGB[MAX_LEDS];
-  _strip.begin();
+      MAX_LEDS(NUM_PIXELS),
+      _taskHandle(nullptr),
+      _lastRenderMs(0),
+      _isRunning(false) {
+  _buf = new CRGB[MAX_LEDS];
+
+  FastLED.addLeds<WS2812B, PIN_WS2812B, GRB>(_buf, MAX_LEDS);
+
+  // Non-linear gamma correction fixes harshness at 1% brightness
+  FastLED.setCorrection(TypicalLEDStrip);
+
+  // Enables temporal dithering for sub-1% perceptual dimming
+  FastLED.setDither(BINARY_DITHER);
+
+  // Set the initial brightness to the default value
+  FastLED.setBrightness(LED_DEFAULT_BRIGHTNESS);
+
   clear();
 }
 
@@ -22,7 +36,6 @@ void LedController::startTask() {
   xTaskCreatePinnedToCore(
       [](void* param) {
         auto* controller = static_cast<LedController*>(param);
-
         controller->update();
       },
       "LedUpdateTask", 8192, this, 1, &_taskHandle, 1);
@@ -47,10 +60,17 @@ void LedController::update() {
           break;
       }
 
-      refresh();
+      std::lock_guard<std::mutex> lock(_mutex);
+      uint8_t scaledBrightness = dim8_raw(_brightness);
+      nscale8(_buf, MAX_LEDS, scaledBrightness);
     }
 
-    vTaskDelay(pdMS_TO_TICKS(32));
+    // Refresh continuously inside the loop to drive FastLED's temporal
+    // dithering
+    FastLED.show();
+
+    // vTaskDelay(pdMS_TO_TICKS(16));
+    FastLED.delay(2);
   }
 
   showBlank();
@@ -59,23 +79,18 @@ void LedController::update() {
   vTaskDelete(nullptr);
 }
 
-void LedController::refresh() {
-  for (uint16_t i = 0; i < MAX_LEDS; i++) {
-    _strip.setPixelColor(i, _buf[i].r, _buf[i].g, _buf[i].b);
-  }
-
-  _strip.show();
-}
-
 void LedController::setBrightness(uint8_t brightness) {
-  _strip.setBrightness(brightness);
+  std::lock_guard<std::mutex> lock(_mutex);
+  _brightness = brightness;
 }
 
-void LedController::clear() {
-  for (uint16_t i = 0; i < MAX_LEDS; i++) _buf[i] = RGB();
+void LedController::showBlank() {
+  clear();
+  FastLED.show();
 }
 
-// Reusable Helper: Encapsulates strip geometry and anti-aliased range iteration
+void LedController::clear() { fill_solid(_buf, MAX_LEDS, CRGB::Black); }
+
 template <typename Func>
 void LedController::forEachLedInRange(float startPct, float endPct, Func&& fn) {
   if (endPct == startPct) return;
@@ -91,7 +106,6 @@ void LedController::forEachLedInRange(float startPct, float endPct, Func&& fn) {
 
   for (uint16_t i = startLed, j = 0; i != endLed;
        i = (i >= MAX_LEDS) ? 0 : i + 1, j++) {
-    // Sub-pixel coverage calculation
     float coveragePct = 1.0f;
     if (i == startLed) coveragePct -= (startPos - startLed);
     if (i == endLed - 1) coveragePct -= ((endLed - 1) + 1.0f - endPos);
@@ -100,46 +114,51 @@ void LedController::forEachLedInRange(float startPct, float endPct, Func&& fn) {
     float progress =
         (rangeLength > 0.0f) ? static_cast<float>(j) / rangeLength : 0.0f;
 
-    // Delegate pixel logic to caller
     fn(i, coveragePct, progress);
   }
 }
 
-void LedController::addRangePct(float startPct, float endPct, RGB paintColor) {
+void LedController::addRangePct(float startPct, float endPct, CRGB paintColor) {
   forEachLedInRange(
       startPct, endPct,
       [this, paintColor](uint16_t i, float coveragePct, float) {
-        RGB currentColor = _buf[i];
-        float blendFactor = currentColor.isBlack() ? coveragePct : 0.5f;
-        _buf[i] = lerpColor(currentColor, paintColor, blendFactor);
+        // FastLED dim8 curve preserves low-end color resolution
+        uint8_t scale = dim8_raw(static_cast<uint8_t>(coveragePct * 255.0f));
+
+        CRGB scaledPaint = paintColor;
+        scaledPaint.nscale8(scale);
+
+        bool isBlack = (_buf[i].r == 0 && _buf[i].g == 0 && _buf[i].b == 0);
+        uint8_t blendAmount = isBlack ? scale : 128;
+
+        nblend(_buf[i], scaledPaint, blendAmount);
       });
 }
 
-void LedController::fadeRangePct(float startPct, float endPct, RGB fadeColor,
-                                 float startValue, float endValue) {
-  forEachLedInRange(
-      startPct, endPct,
-      [this, fadeColor, startValue, endValue](uint16_t i, float coveragePct,
-                                              float progress) {
-        RGB currentColor = _buf[i];
-        float fadeValue =
-            MathUtils::lerp(startValue, endValue, 1.0f - progress * progress);
-        _buf[i] = lerpColor(currentColor, fadeColor, fadeValue * coveragePct);
-      });
+void LedController::fadeRangePct(float startPct, float endPct, CRGB fadeColor,
+                                 bool inverse) {
+  forEachLedInRange(startPct, endPct,
+                    [this, fadeColor, inverse](uint16_t i, float coveragePct,
+                                               float progress) {
+                      float fadeValue = 1.0f - (progress * std::sqrt(progress));
+
+                      if (inverse) fadeValue = 1.0f - fadeValue;
+
+                      uint8_t blendAmount = static_cast<uint8_t>(constrain(
+                          fadeValue * coveragePct * 255.0f, 0.0f, 255.0f));
+
+                      nblend(_buf[i], fadeColor, blendAmount);
+                    });
 }
 
 void LedController::fillEvents(const std::vector<Event>& events,
                                time_t currentTimestamp, uint32_t fadeDistance) {
-  // The display range is from -fadeDistance + 1 LED to 12 hours in the future.
   int32_t displayRangeOffsetStart =
       -(int32_t)fadeDistance + (12 * 3600 / MAX_LEDS);
   int32_t displayRangeOffsetEnd = 12 * 3600 - (int32_t)fadeDistance;
 
   for (const Event& event : events) {
-    // Still use UTC timestamps for determining
-    // whether the event is relevant.
     int32_t startOffset = event.startTimestamp - currentTimestamp;
-
     int32_t endOffset = event.endTimestamp - currentTimestamp;
 
     if (endOffset < -(int32_t)fadeDistance &&
@@ -147,26 +166,24 @@ void LedController::fillEvents(const std::vector<Event>& events,
       continue;
 
     if (startOffset > 12 * 3600 - (int32_t)fadeDistance) continue;
+
     // Clamp offset values to the display range.
     startOffset =
         constrain(startOffset, displayRangeOffsetStart, displayRangeOffsetEnd);
     endOffset =
         constrain(endOffset, displayRangeOffsetStart, displayRangeOffsetEnd);
 
-    // Convert event timestamps to LOCAL clock positions.
     float startPct = _timeManager.clock12hPct(currentTimestamp + startOffset);
-
     float endPct = _timeManager.clock12hPct(currentTimestamp + endOffset);
 
     addRangePct(startPct, endPct, event.color);
   }
 
-  // Apply fade effect for events that are fading out.
-  if (fadeDistance != 0 && events.size() > 0) {
+  if (fadeDistance != 0 && !events.empty()) {
     float fadeStartPct =
         _timeManager.clock12hPct(currentTimestamp - fadeDistance);
     float fadeEndPct = _timeManager.clock12hPct(currentTimestamp);
 
-    fadeRangePct(fadeStartPct, fadeEndPct, 0x000000);
+    fadeRangePct(fadeStartPct, fadeEndPct, CRGB::Black);
   }
 }

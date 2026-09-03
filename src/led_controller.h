@@ -1,6 +1,9 @@
 #pragma once
-#include <Adafruit_NeoPixel.h>
+#define FASTLED_INTERNAL  // Suppress FastLED build pragma banners
 #include <Arduino.h>
+#define FASTLED_ALLOW_INTERRUPTS 0
+#define FASTLED_ESP32_RAW_PIN_DRIVE 1
+#include <FastLED.h>
 
 #include <map>
 #include <vector>
@@ -10,27 +13,12 @@
 #include "math_utils.h"
 #include "time_manager.h"
 
-struct RGB {
-  uint8_t r;
-  uint8_t g;
-  uint8_t b;
-  bool isBlack() const { return r == 0 && g == 0 && b == 0; }
-  RGB() : r(0), g(0), b(0) {}
-  RGB(uint8_t red, uint8_t green, uint8_t blue) : r(red), g(green), b(blue) {}
-  RGB(uint32_t color) {
-    r = (color >> 16) & 0xFF;
-    g = (color >> 8) & 0xFF;
-    b = color & 0xFF;
-  }
-};
-
 enum class LedMode { None, Events };
 
 class LedController {
  public:
   uint16_t MAX_LEDS;
-  LedController(uint16_t numPixels, uint8_t pin, EventManager& eventManager,
-                TimeManager& timeManager);
+  LedController(EventManager& eventManager, TimeManager& timeManager);
 
   void setBrightness(uint8_t brightness);
   void startTask();
@@ -40,37 +28,30 @@ class LedController {
   };
 
  private:
-  Adafruit_NeoPixel _strip;
   LedMode _mode = LedMode::None;
   EventManager& _eventManager;
   TimeManager& _timeManager;
-  RGB* _buf;
+  CRGB* _buf;
   bool _isRunning;
   TaskHandle_t _taskHandle;
   uint32_t _lastRenderMs;
+  uint8_t _brightness = 255;
+  mutable std::mutex _mutex;
 
   std::map<LedMode, uint32_t> refreshIntervals = {{LedMode::Events, 1000},
                                                   {LedMode::None, 60000}};
 
-  void clear();    // clears framebuffer
-  void refresh();  // refreshes the strip with the framebuffer
+  void clear();  // clears framebuffer
   void update();
-  void addRangePct(float startPct, float endPct, RGB paintColor);  // 0..100 %
-  void fadeRangePct(float startPct, float endPct, RGB fadeColor,
-                    float startValue = 0.0f,
-                    float endValue = 1.0f);  // 0..100 %
+  void addRangePct(float startPct, float endPct, CRGB paintColor);  // 0..100 %
+  void fadeRangePct(float startPct, float endPct, CRGB fadeColor,
+                    bool inverse = false);
   void fillEvents(const std::vector<Event>& events, time_t currentTimestamp,
                   uint32_t fadeDistance);
   template <typename Func>
   void forEachLedInRange(float startPct, float endPct,
                          Func&& callback);  // 0..100 %
-  RGB lerpColor(RGB a, RGB b, float t) {
-    return {static_cast<uint8_t>(MathUtils::lerp(a.r, b.r, t)),
-            static_cast<uint8_t>(MathUtils::lerp(a.g, b.g, t)),
-            static_cast<uint8_t>(MathUtils::lerp(a.b, b.b, t))};
-  }
-  void showBlank() {
-    clear();
-    refresh();
-  };
+
+  void showBlank();
+  void show();
 };

@@ -44,17 +44,17 @@ void BrightnessController::update() {
     uint8_t newBrightness = DAY_BRIGHTNESS;
 
     // Determine the new brightness based on the current hour
-    if (currentHour >= NIGHT_START_HOUR - NIGH_TRANSITION_DURATION &&
+    if (currentHour >= NIGHT_START_HOUR - NIGHT_TRANSITION_DURATION &&
         currentHour < NIGHT_START_HOUR) {
       // Transition to night
-      float t = (currentHour - (NIGHT_START_HOUR - NIGH_TRANSITION_DURATION)) /
-                NIGH_TRANSITION_DURATION;
+      float t = (currentHour - (NIGHT_START_HOUR - NIGHT_TRANSITION_DURATION)) /
+                NIGHT_TRANSITION_DURATION;
       newBrightness = static_cast<uint8_t>(
           MathUtils::lerp(DAY_BRIGHTNESS, NIGHT_BRIGHTNESS, t));
     } else if (currentHour > NIGHT_END_HOUR &&
-               currentHour <= NIGHT_END_HOUR + NIGH_TRANSITION_DURATION) {
+               currentHour <= NIGHT_END_HOUR + NIGHT_TRANSITION_DURATION) {
       // Transition to day
-      float t = (currentHour - NIGHT_END_HOUR) / NIGH_TRANSITION_DURATION;
+      float t = (currentHour - NIGHT_END_HOUR) / NIGHT_TRANSITION_DURATION;
       newBrightness = static_cast<uint8_t>(
           MathUtils::lerp(NIGHT_BRIGHTNESS, DAY_BRIGHTNESS, t));
     } else if (currentHour >= NIGHT_START_HOUR ||
@@ -68,12 +68,15 @@ void BrightnessController::update() {
     Serial.print(", New Brightness: ");
     Serial.println(newBrightness);
 
+    // Check if the new brightness is below the cutoff threshold
+    if (newBrightness <= BRIGHTNESS_CUTOFF) newBrightness = 0;
+
     // Update brightness if it has changed
     if (newBrightness != brightness)
       _ledController.setBrightness(newBrightness);
 
     brightness = newBrightness;
-    vTaskDelay(pdMS_TO_TICKS(60000));  // Check every minute
+    vTaskDelay(pdMS_TO_TICKS(5000));  // Check every 5 seconds
   }
 
   _taskHandle = nullptr;

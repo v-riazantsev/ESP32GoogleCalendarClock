@@ -9,13 +9,10 @@
 #include "time_manager.h"
 #include "wifi_manager.h"
 
-#define PIN_WS2812B 32
-#define NUM_PIXELS 44
-
 CalendarApi calendarApi;
 TimeManager timeManager;
 EventManager eventManager(calendarApi);
-LedController strip(NUM_PIXELS, PIN_WS2812B, eventManager, timeManager);
+LedController strip(eventManager, timeManager);
 BrightnessController brightnessController(strip, timeManager);
 WiFiManager wifi(WIFI_SSID, WIFI_PASSWORD);
 
