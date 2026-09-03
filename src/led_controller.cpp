@@ -90,7 +90,7 @@ void LedController::forEachLedInRange(float startPct, float endPct, Func&& fn) {
   uint16_t endLed = static_cast<uint16_t>(std::ceil(endPos));
 
   for (uint16_t i = startLed, j = 0; i != endLed;
-       i = (i + 1 >= MAX_LEDS) ? 0 : i + 1, j++) {
+       i = (i >= MAX_LEDS) ? 0 : i + 1, j++) {
     // Sub-pixel coverage calculation
     float coveragePct = 1.0f;
     if (i == startLed) coveragePct -= (startPos - startLed);
@@ -123,10 +123,11 @@ void LedController::fadeRangePct(float startPct, float endPct, RGB fadeColor,
                                               float progress) {
         RGB currentColor = _buf[i];
         float fadeValue =
-            lerpFast(startValue, endValue, 1.0f - progress * progress);
+            MathUtils::lerp(startValue, endValue, 1.0f - progress * progress);
         _buf[i] = lerpColor(currentColor, fadeColor, fadeValue * coveragePct);
       });
 }
+
 void LedController::fillEvents(const std::vector<Event>& events,
                                time_t currentTimestamp, uint32_t fadeDistance) {
   // The display range is from -fadeDistance + 1 LED to 12 hours in the future.
@@ -146,7 +147,6 @@ void LedController::fillEvents(const std::vector<Event>& events,
       continue;
 
     if (startOffset > 12 * 3600 - (int32_t)fadeDistance) continue;
-
     // Clamp offset values to the display range.
     startOffset =
         constrain(startOffset, displayRangeOffsetStart, displayRangeOffsetEnd);
@@ -161,9 +161,12 @@ void LedController::fillEvents(const std::vector<Event>& events,
     addRangePct(startPct, endPct, event.color);
   }
 
-  float fadeStartPct =
-      _timeManager.clock12hPct(currentTimestamp - fadeDistance);
-  float fadeEndPct = _timeManager.clock12hPct(currentTimestamp);
+  // Apply fade effect for events that are fading out.
+  if (fadeDistance != 0 && events.size() > 0) {
+    float fadeStartPct =
+        _timeManager.clock12hPct(currentTimestamp - fadeDistance);
+    float fadeEndPct = _timeManager.clock12hPct(currentTimestamp);
 
-  fadeRangePct(fadeStartPct, fadeEndPct, 0x000000);
+    fadeRangePct(fadeStartPct, fadeEndPct, 0x000000);
+  }
 }

@@ -7,6 +7,7 @@
 
 #include "event.h"
 #include "event_manager.h"
+#include "math_utils.h"
 #include "time_manager.h"
 
 struct RGB {
@@ -63,15 +64,10 @@ class LedController {
   template <typename Func>
   void forEachLedInRange(float startPct, float endPct,
                          Func&& callback);  // 0..100 %
-  float lerpFast(float a, float b, float t) { return a + t * (b - a); }
-  float inverseLerpClamped(float a, float b, float value) {
-    if (a == b) return 0.0f;
-    return constrain((value - a) / (b - a), 0.0f, 1.0f);
-  }
   RGB lerpColor(RGB a, RGB b, float t) {
-    return {static_cast<uint8_t>(lerpFast(a.r, b.r, t)),
-            static_cast<uint8_t>(lerpFast(a.g, b.g, t)),
-            static_cast<uint8_t>(lerpFast(a.b, b.b, t))};
+    return {static_cast<uint8_t>(MathUtils::lerp(a.r, b.r, t)),
+            static_cast<uint8_t>(MathUtils::lerp(a.g, b.g, t)),
+            static_cast<uint8_t>(MathUtils::lerp(a.b, b.b, t))};
   }
   void showBlank() {
     clear();
