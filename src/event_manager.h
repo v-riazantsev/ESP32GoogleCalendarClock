@@ -10,7 +10,7 @@
 
 class EventManager {
  public:
-  EventManager(CalendarApi& api, uint32_t refreshIntervalMs);
+  EventManager(CalendarApi& api);
   std::vector<Event> getEvents() const;
   void update();
   void startTask();  // Start the fetch loop in a separate task
@@ -18,11 +18,9 @@ class EventManager {
 
  private:
   CalendarApi& _api;
-  uint32_t _refreshIntervalMs;
 
   std::vector<Event> _events;
   mutable std::mutex _mutex;
   TaskHandle_t _taskHandle;
   bool _isRunning;
-  void fetchLoop();
 };

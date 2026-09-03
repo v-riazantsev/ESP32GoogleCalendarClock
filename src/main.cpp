@@ -14,7 +14,7 @@
 
 CalendarApi calendarApi;
 TimeManager timeManager;
-EventManager eventManager(calendarApi, 5000);  // Refresh every 5 seconds
+EventManager eventManager(calendarApi);
 LedController strip(NUM_PIXELS, PIN_WS2812B, eventManager, timeManager);
 BrightnessController brightnessController(strip, timeManager);
 WiFiManager wifi(WIFI_SSID, WIFI_PASSWORD);

@@ -6,6 +6,8 @@
 #define NTP_SERVER_2 "time.nist.gov"
 #define NTP_SERVER_3 "time.google.com"
 
+#define API_CALL_TIMEOUT_MS 30000
+
 #define NIGHT_START_HOUR 22.0f
 #define NIGHT_END_HOUR 6.0f
 #define NIGH_TRANSITION_DURATION 0.5f
