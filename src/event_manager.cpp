@@ -28,8 +28,8 @@ void EventManager::update() {
   std::lock_guard<std::mutex> lock(_mutex);
   _events = std::move(newEvents);
 
-  // Serial.print("Events updated. Total events fetched: ");
-  // Serial.println(_events.size());
+  Serial.print("Events updated. Total events fetched: ");
+  Serial.println(_events.size());
 }
 
 void EventManager::startTask() {

@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
 
+#include "brightness_controller.h"
 #include "calendar_api.h"
 #include "event_manager.h"
 #include "led_controller.h"
@@ -15,16 +16,16 @@ CalendarApi calendarApi;
 TimeManager timeManager;
 EventManager eventManager(calendarApi, 5000);  // Refresh every 5 seconds
 LedController strip(NUM_PIXELS, PIN_WS2812B, eventManager, timeManager);
+BrightnessController brightnessController(strip, timeManager);
 WiFiManager wifi(WIFI_SSID, WIFI_PASSWORD);
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Starting Smart Clock...");
-  strip.setBrightness(10);
+  wifi.begin();
   strip.switchMode(LedMode::Events);
   strip.startTask();
-  wifi.begin();
   timeManager.begin();
+  brightnessController.startTask();
   eventManager.startTask();  // Start the event fetch loop
 }
 
