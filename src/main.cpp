@@ -26,8 +26,4 @@ void setup() {
   eventManager.startTask();  // Start the event fetch loop
 }
 
-void loop() {
-  wifi.update();  // Keep Wi-Fi connection alive
-
-  delay(5000);
-}
+void loop() { delay(5000); }

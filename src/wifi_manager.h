@@ -11,6 +11,8 @@ class WiFiManager {
   // Start the Wi-Fi connection.
   void begin();
 
+  void stop();
+
   // Keep the Wi-Fi connection alive and reconnect if needed.
   void update();
 
@@ -23,4 +25,6 @@ class WiFiManager {
 
   // Wi-Fi network password.
   const char* _password;
+
+  bool _isRunning;
 };
