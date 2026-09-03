@@ -17,4 +17,10 @@ class TimeManager {
 
   // Convert timestamp to position on a 12-hour clock.
   float clock12hPct(time_t timestamp) const;
+
+  float nowHour() const;
+
+  bool synchronized() const {
+    return now() > 1609459200;
+  }  // 2021-01-01 00:00:00 UTC
 };
