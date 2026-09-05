@@ -16,13 +16,12 @@ LedController::LedController(EventManager& eventManager,
 
   FastLED.addLeds<WS2812B, PIN_WS2812B, GRB>(_buf, MAX_LEDS);
 
-  // Non-linear gamma correction fixes harshness at 1% brightness
+  // Non-linear gamma correction
   FastLED.setCorrection(TypicalLEDStrip);
 
-  // Enables temporal dithering for sub-1% perceptual dimming
+  // Enables temporal dithering
   FastLED.setDither(BINARY_DITHER);
 
-  // Set the initial brightness to the default value
   FastLED.setBrightness(LED_DEFAULT_BRIGHTNESS);
 
   clear();
@@ -69,7 +68,6 @@ void LedController::update() {
     // dithering
     FastLED.show();
 
-    // vTaskDelay(pdMS_TO_TICKS(16));
     FastLED.delay(2);
   }
 
