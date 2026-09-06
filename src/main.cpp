@@ -29,7 +29,4 @@ void setup() {
   brightnessController.startTask();
 }
 
-void loop() {
-  Serial.printf("Touch read: %d\n", touchRead(4));
-  delay(100);
-}
+void loop() { delay(60000); }

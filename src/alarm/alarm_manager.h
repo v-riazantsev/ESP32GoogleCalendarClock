@@ -28,4 +28,5 @@ class AlarmManager {
   TaskHandle_t _taskHandle;
   std::string _activeEventId;
   bool _acknowledged = false;
+  bool _acknowledgeRequested = false;
 };

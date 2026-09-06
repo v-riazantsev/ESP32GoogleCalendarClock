@@ -2,6 +2,9 @@
 
 #define PIN_WS2812B 32
 #define NUM_PIXELS 44
+#define TOUCH_PIN 4
+
+#define TOUCH_THRESHOLD 7
 
 #define TIMEZONE "CET-1CEST,M3.5.0,M10.5.0"
 
