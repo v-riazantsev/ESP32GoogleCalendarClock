@@ -8,9 +8,12 @@
 #include "config.h"
 
 EventManager::EventManager(CalendarApi& api)
-    : _api(api), _taskHandle(nullptr), _isRunning(false) {}
+    : _events(std::make_shared<const std::vector<Event>>()),
+      _api(api),
+      _taskHandle(nullptr),
+      _isRunning(false) {}
 
-std::vector<Event> EventManager::getEvents() const {
+std::shared_ptr<const std::vector<Event>> EventManager::getEvents() const {
   std::lock_guard<std::mutex> lock(_mutex);
   return _events;
 }
@@ -24,14 +27,16 @@ void EventManager::update() {
       continue;
     }
 
-    // Limit scope of lock_guard so it unlocks immediately after the assignment
+    auto newEventsPtr =
+        std::make_shared<const std::vector<Event>>(std::move(newEvents));
+
     {
       std::lock_guard<std::mutex> lock(_mutex);
-      _events = std::move(newEvents);
+      _events = newEventsPtr;
     }
 
     Serial.print("Events updated. Total events fetched: ");
-    Serial.println(_events.size());
+    Serial.println(newEventsPtr->size());
     vTaskDelay(pdMS_TO_TICKS(
         API_CALL_TIMEOUT_MS));  // Wait for the specified refresh interval
   }

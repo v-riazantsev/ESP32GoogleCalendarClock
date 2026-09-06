@@ -8,6 +8,7 @@
 #include <map>
 #include <vector>
 
+#include "alarm_manager.h"
 #include "event.h"
 #include "event_manager.h"
 #include "math_utils.h"
@@ -18,7 +19,8 @@ enum class LedMode { None, Events };
 class LedController {
  public:
   uint16_t MAX_LEDS;
-  LedController(EventManager& eventManager, TimeManager& timeManager);
+  LedController(EventManager& eventManager, TimeManager& timeManager,
+                AlarmManager& alarmManager);
 
   void setBrightness(uint8_t brightness);
   void startTask();
@@ -30,6 +32,7 @@ class LedController {
  private:
   LedMode _mode = LedMode::None;
   EventManager& _eventManager;
+  AlarmManager& _alarmManager;
   TimeManager& _timeManager;
   CRGB* _buf;
   bool _isRunning;
@@ -37,17 +40,26 @@ class LedController {
   uint32_t _lastRenderMs;
   uint8_t _brightness = 255;
   mutable std::mutex _mutex;
+  const uint8_t animationLength = 96;
 
-  std::map<LedMode, uint32_t> refreshIntervals = {{LedMode::Events, 1000},
-                                                  {LedMode::None, 60000}};
+  // std::map<LedMode, uint32_t> refreshIntervals = {{LedMode::Events, 1000},
+  //                                                 {LedMode::None, 60000}};
 
   void clear();  // clears framebuffer
   void update();
   void addRangePct(float startPct, float endPct, CRGB paintColor);  // 0..100 %
   void fadeRangePct(float startPct, float endPct, CRGB fadeColor,
                     bool inverse = false);
-  void fillEvents(const std::vector<Event>& events, time_t currentTimestamp,
-                  uint32_t fadeDistance);
+  void fillEvents(std::shared_ptr<const std::vector<Event>> events,
+                  const std::string& blinkingEventId, float animationProgress,
+                  time_t currentTimestamp, uint32_t fadeDistance);
+
+  void addTimestampRange(time_t startTimestamp, time_t endTimestamp,
+                         time_t currentTimestamp, CRGB paintColor,
+                         uint32_t fadeDistance,
+                         int32_t displayRangeOffsetStart = 0,
+                         int32_t displayRangeOffsetEnd = 12 * 3600);
+
   template <typename Func>
   void forEachLedInRange(float startPct, float endPct,
                          Func&& callback);  // 0..100 %

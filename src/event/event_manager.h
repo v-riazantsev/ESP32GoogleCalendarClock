@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -11,7 +12,7 @@
 class EventManager {
  public:
   EventManager(CalendarApi& api);
-  std::vector<Event> getEvents() const;
+  std::shared_ptr<const std::vector<Event>> getEvents() const;
   void update();
   void startTask();  // Start the fetch loop in a separate task
   void stopTask();   // Stop the fetch loop task
@@ -19,7 +20,7 @@ class EventManager {
  private:
   CalendarApi& _api;
 
-  std::vector<Event> _events;
+  std::shared_ptr<const std::vector<Event>> _events;
   mutable std::mutex _mutex;
   TaskHandle_t _taskHandle;
   bool _isRunning;

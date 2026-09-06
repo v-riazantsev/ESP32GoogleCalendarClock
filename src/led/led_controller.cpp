@@ -3,11 +3,14 @@
 #include <cmath>
 
 #include "config.h"
+#include "time_manager.h"
 
 LedController::LedController(EventManager& eventManager,
-                             TimeManager& timeManager)
+                             TimeManager& timeManager,
+                             AlarmManager& alarmManager)
     : _eventManager(eventManager),
       _timeManager(timeManager),
+      _alarmManager(alarmManager),
       MAX_LEDS(NUM_PIXELS),
       _taskHandle(nullptr),
       _lastRenderMs(0),
@@ -41,34 +44,36 @@ void LedController::startTask() {
 }
 
 void LedController::update() {
+  uint8_t animationFrame = 0;
+
   while (_isRunning) {
-    uint32_t now = millis();
-    uint32_t refreshInterval = refreshIntervals[_mode];
+    clear();
 
-    if (_lastRenderMs == 0 || now - _lastRenderMs >= refreshInterval) {
-      _lastRenderMs = now;
+    switch (_mode) {
+      case LedMode::Events: {
+        std::string blinkingEventId =
+            _alarmManager.getUnacknowledgedActiveEventId();
 
-      clear();
-
-      switch (_mode) {
-        case LedMode::Events:
-          fillEvents(_eventManager.getEvents(), _timeManager.now(), 3600 * 3);
-          break;
-
-        case LedMode::None:
-          break;
+        float animationProgress = (float)animationFrame / animationLength;
+        fillEvents(_eventManager.getEvents(), blinkingEventId,
+                   animationProgress, _timeManager.now(), 3600 * 3);
+        break;
       }
+      case LedMode::None:
+        break;
+    }
 
+    {
       std::lock_guard<std::mutex> lock(_mutex);
       uint8_t scaledBrightness = dim8_raw(_brightness);
       nscale8(_buf, MAX_LEDS, scaledBrightness);
     }
 
-    // Refresh continuously inside the loop to drive FastLED's temporal
-    // dithering
-    FastLED.show();
+    animationFrame++;
+    if (animationFrame >= animationLength) animationFrame = 0;
 
-    FastLED.delay(2);
+    FastLED.show();
+    FastLED.delay(32);
   }
 
   showBlank();
@@ -117,20 +122,15 @@ void LedController::forEachLedInRange(float startPct, float endPct, Func&& fn) {
 }
 
 void LedController::addRangePct(float startPct, float endPct, CRGB paintColor) {
-  forEachLedInRange(
-      startPct, endPct,
-      [this, paintColor](uint16_t i, float coveragePct, float) {
-        // FastLED dim8 curve preserves low-end color resolution
-        uint8_t scale = dim8_raw(static_cast<uint8_t>(coveragePct * 255.0f));
+  forEachLedInRange(startPct, endPct,
+                    [this, paintColor](uint16_t i, float coveragePct, float) {
+                      CRGB scaledPaint = paintColor;
+                      scaledPaint.nscale8(coveragePct * 255.0f);
 
-        CRGB scaledPaint = paintColor;
-        scaledPaint.nscale8(scale);
-
-        bool isBlack = (_buf[i].r == 0 && _buf[i].g == 0 && _buf[i].b == 0);
-        uint8_t blendAmount = isBlack ? scale : 128;
-
-        nblend(_buf[i], scaledPaint, blendAmount);
-      });
+                      _buf[i].r = qadd8(_buf[i].r, scaledPaint.r);
+                      _buf[i].g = qadd8(_buf[i].g, scaledPaint.g);
+                      _buf[i].b = qadd8(_buf[i].b, scaledPaint.b);
+                    });
 }
 
 void LedController::fadeRangePct(float startPct, float endPct, CRGB fadeColor,
@@ -149,35 +149,56 @@ void LedController::fadeRangePct(float startPct, float endPct, CRGB fadeColor,
                     });
 }
 
-void LedController::fillEvents(const std::vector<Event>& events,
-                               time_t currentTimestamp, uint32_t fadeDistance) {
+void LedController::addTimestampRange(time_t startTimestamp,
+                                      time_t endTimestamp,
+                                      time_t currentTimestamp, CRGB paintColor,
+                                      uint32_t fadeDistance,
+                                      int32_t displayRangeOffsetStart,
+                                      int32_t displayRangeOffsetEnd) {
+  int32_t startOffset = startTimestamp - currentTimestamp;
+  int32_t endOffset = endTimestamp - currentTimestamp;
+
+  if (endOffset < -(int32_t)fadeDistance &&
+      startOffset < -(int32_t)fadeDistance)
+    return;
+
+  if (startOffset > 12 * 3600 - (int32_t)fadeDistance) return;
+
+  // Clamp offset values to the display range.
+  startOffset =
+      constrain(startOffset, displayRangeOffsetStart, displayRangeOffsetEnd);
+  endOffset =
+      constrain(endOffset, displayRangeOffsetStart, displayRangeOffsetEnd);
+
+  float startPct = _timeManager.clock12hPct(currentTimestamp + startOffset);
+  float endPct = _timeManager.clock12hPct(currentTimestamp + endOffset);
+
+  addRangePct(startPct, endPct, paintColor);
+}
+
+void LedController::fillEvents(std::shared_ptr<const std::vector<Event>> events,
+                               const std::string& blinkingEventId,
+                               float animationProgress, time_t currentTimestamp,
+                               uint32_t fadeDistance) {
   int32_t displayRangeOffsetStart =
       -(int32_t)fadeDistance + (12 * 3600 / MAX_LEDS);
   int32_t displayRangeOffsetEnd = 12 * 3600 - (int32_t)fadeDistance;
 
-  for (const Event& event : events) {
-    int32_t startOffset = event.startTimestamp - currentTimestamp;
-    int32_t endOffset = event.endTimestamp - currentTimestamp;
+  for (const Event& event : *events) {
+    CRGB eventColor = CRGB(event.color);
 
-    if (endOffset < -(int32_t)fadeDistance &&
-        startOffset < -(int32_t)fadeDistance)
-      continue;
+    if (blinkingEventId == event.id) {
+      float brightness = std::cos(animationProgress * PI * 2.0f) * 0.5f + 0.5f;
 
-    if (startOffset > 12 * 3600 - (int32_t)fadeDistance) continue;
+      eventColor.nscale8_video(static_cast<uint8_t>(brightness * 255.0f));
+    }
 
-    // Clamp offset values to the display range.
-    startOffset =
-        constrain(startOffset, displayRangeOffsetStart, displayRangeOffsetEnd);
-    endOffset =
-        constrain(endOffset, displayRangeOffsetStart, displayRangeOffsetEnd);
-
-    float startPct = _timeManager.clock12hPct(currentTimestamp + startOffset);
-    float endPct = _timeManager.clock12hPct(currentTimestamp + endOffset);
-
-    addRangePct(startPct, endPct, event.color);
+    addTimestampRange(event.startTimestamp, event.endTimestamp,
+                      currentTimestamp, eventColor, fadeDistance,
+                      displayRangeOffsetStart, displayRangeOffsetEnd);
   }
 
-  if (fadeDistance != 0 && !events.empty()) {
+  if (fadeDistance != 0 && !events->empty()) {
     float fadeStartPct =
         _timeManager.clock12hPct(currentTimestamp - fadeDistance);
     float fadeEndPct = _timeManager.clock12hPct(currentTimestamp);
