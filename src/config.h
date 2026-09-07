@@ -3,6 +3,7 @@
 #define PIN_WS2812B 32
 #define NUM_PIXELS 44
 #define TOUCH_PIN 4
+#define PIN_BUZZER 25
 
 #define TOUCH_THRESHOLD 7
 

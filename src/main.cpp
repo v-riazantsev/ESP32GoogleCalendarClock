@@ -13,7 +13,8 @@
 CalendarApi calendarApi;
 TimeManager timeManager;
 EventManager eventManager(calendarApi);
-AlarmManager alarmManager(eventManager, timeManager);
+BuzzerController buzzerController;
+AlarmManager alarmManager(eventManager, timeManager, buzzerController);
 LedController strip(eventManager, timeManager, alarmManager);
 BrightnessController brightnessController(strip, timeManager);
 WiFiManager wifi(WIFI_SSID, WIFI_PASSWORD);
@@ -23,6 +24,7 @@ void setup() {
   wifi.begin();
   timeManager.begin();
   eventManager.startTask();
+  buzzerController.begin();
   alarmManager.begin();
   strip.switchMode(LedMode::Events);
   strip.startTask();

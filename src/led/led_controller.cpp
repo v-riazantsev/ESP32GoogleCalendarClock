@@ -72,7 +72,8 @@ void LedController::update() {
     animationFrame++;
     if (animationFrame >= animationLength) animationFrame = 0;
 
-    FastLED.show();
+    // FastLED.delay() calls .show() internally and is necessary for dithering
+    // to work properly.
     FastLED.delay(32);
   }
 
