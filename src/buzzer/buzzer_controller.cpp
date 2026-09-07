@@ -30,7 +30,6 @@ void BuzzerController::begin() {
 void BuzzerController::play(BuzzerPreset preset) {
   if (_queue == nullptr) return;
 
-  // Don't wait if the queue is full.
   xQueueSend(_queue, &preset, 0);
 }
 

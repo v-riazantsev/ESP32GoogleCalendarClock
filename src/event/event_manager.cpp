@@ -55,13 +55,7 @@ void EventManager::startTask() {
         EventManager* manager = static_cast<EventManager*>(param);
         manager->update();
       },
-      "EventFetchTask",  // Task name
-      8192,              // Stack size
-      this,              // Pass the object instance
-      1,                 // Task priority
-      &_taskHandle,      // Task handle
-      0                  // Core ID
-  );
+      "EventFetchTask", 8192, this, 1, &_taskHandle, 0);
 }
 
 void EventManager::stopTask() {

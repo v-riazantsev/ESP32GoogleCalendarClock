@@ -40,10 +40,6 @@ class LedController {
   uint32_t _lastRenderMs;
   uint8_t _brightness = 255;
   mutable std::mutex _mutex;
-  const uint8_t animationLength = 96;
-
-  // std::map<LedMode, uint32_t> refreshIntervals = {{LedMode::Events, 1000},
-  //                                                 {LedMode::None, 60000}};
 
   void clear();  // clears framebuffer
   void update();

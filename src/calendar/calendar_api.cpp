@@ -16,9 +16,6 @@ bool CalendarApi::fetchEvents(std::vector<Event>& events) {
 
   String url = String(GOOGLE_APP_URL) + String(GOOGLE_APP_TOKEN);
 
-  // Serial.println("Requesting:");
-  // Serial.println(url);
-
   http.begin(url);
 
   // Follow redirects from Google Apps Script.
@@ -26,9 +23,6 @@ bool CalendarApi::fetchEvents(std::vector<Event>& events) {
 
   // Perform the request once.
   int httpCode = http.GET();
-
-  // Serial.print("HTTP status: ");
-  // Serial.println(httpCode);
 
   if (httpCode != HTTP_CODE_OK) {
     Serial.print("HTTP error: ");
@@ -39,9 +33,6 @@ bool CalendarApi::fetchEvents(std::vector<Event>& events) {
   }
 
   String response = http.getString();
-
-  // Serial.println("API Response:");
-  // Serial.println(response);
 
   http.end();
 

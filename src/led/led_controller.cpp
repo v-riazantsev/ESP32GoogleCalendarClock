@@ -54,9 +54,9 @@ void LedController::update() {
         std::string blinkingEventId =
             _alarmManager.getUnacknowledgedActiveEventId();
 
-        float animationProgress = (float)animationFrame / animationLength;
+        float animationProgress = (float)animationFrame / ANIMATION_LENGTH;
         fillEvents(_eventManager.getEvents(), blinkingEventId,
-                   animationProgress, _timeManager.now(), 3600 * 3);
+                   animationProgress, _timeManager.now(), FADE_DISTANCE);
         break;
       }
       case LedMode::None:
@@ -70,7 +70,7 @@ void LedController::update() {
     }
 
     animationFrame++;
-    if (animationFrame >= animationLength) animationFrame = 0;
+    if (animationFrame >= ANIMATION_LENGTH) animationFrame = 0;
 
     // FastLED.delay() calls .show() internally and is necessary for dithering
     // to work properly.
